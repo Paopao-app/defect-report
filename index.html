@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Defect Pro v3.1</title>
+    <link rel="manifest" href="manifest.json">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap');
+        body { font-family: 'Sarabun', sans-serif; background-color: #f1f5f9; }
+        .pwa-app { max-width: 500px; margin: 0 auto; min-height: 100vh; background: white; position: relative; }
+        
+        /* สไตล์พิเศษสำหรับ PDF (เน้นความเป็นมืออาชีพ) */
+        #pdf-render-area { display: none; width: 750px; padding: 40px; color: #000; background: white; }
+        .pdf-table { width: 100%; border-collapse: collapse; margin-top: 25px; table-layout: fixed; }
+        .pdf-table th { background-color: #1e1b4b; color: white; padding: 12px; border: 1px solid #1e1b4b; font-size: 14px; }
+        .pdf-table td { border: 1px solid #cbd5e1; padding: 15px; vertical-align: top; word-wrap: break-word; font-size: 14px; }
+        .pdf-img { width: 100%; max-width: 320px; max-height: 280px; object-fit: contain; border-radius: 4px; display: block; margin: 0 auto; }
+        .footer-sign { margin-top: 60px; display: flex; justify-content: space-around; }
+        .sign-box { text-align: center; width: 220px; }
+        .line { border-bottom: 1px solid #000; height: 40px; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div class="pwa-app shadow-xl flex flex-col">
+        <header class="bg-indigo-950 text-white p-6 rounded-b-[2rem] shadow-lg">
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-xl font-bold tracking-widest text-indigo-100">DEFECT PRO</h1>
+                <button onclick="resetApp()" class="px-4 py-2 bg-rose-600 text-white text-xs font-bold rounded-xl active:scale-95 transition">ล้างข้อมูล</button>
+            </div>
+            <div class="space-y-3">
+                <input type="text" id="projName" placeholder="ชื่อโครงการ" class="w-full bg-indigo-900/50 border border-indigo-800 rounded-xl p-3 text-sm text-white outline-none">
+                <input type="text" id="inspectorName" placeholder="ผู้ตรวจสอบ" class="w-full bg-indigo-900/50 border border-indigo-800 rounded-xl p-3 text-sm text-white outline-none">
+            </div>
+        </header>
+
+        <main class="p-6 flex-1">
+            <div class="bg-slate-50 rounded-3xl p-5 mb-6 border border-slate-200">
+                <input type="text" id="defectTitle" placeholder="ระบุสิ่งที่พบ เช่น ผนังร้าว" class="w-full p-4 bg-white border border-slate-200 rounded-2xl mb-4 shadow-sm outline-none">
+                
+                <div id="previewContainer" class="hidden mb-4 relative">
+                    <img id="imgPreview" class="w-full h-48 object-cover rounded-2xl shadow-md border-4 border-white">
+                    <button onclick="clearImage()" class="absolute -top-2 -right-2 bg-slate-800 text-white w-8 h-8 rounded-full shadow-lg">✕</button>
+                </div>
+
+                <div class="flex gap-3">
+                    <button onclick="document.getElementById('cameraInput').click()" class="flex-1 bg-white border border-slate-300 text-slate-700 font-bold py-4 rounded-2xl flex items-center justify-center gap-2 active:bg-slate-100">
+                        <span>📸 ถ่ายรูป</span>
+                        <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden">
+                    </button>
+                    <button onclick="addListItem()" class="flex-[1.5] bg-indigo-600 text-white font-bold py-4 rounded-2xl shadow-lg active:scale-95 transition">เพิ่มลงรายการ</button>
+                </div>
+            </div>
+
+            <div id="displayList" class="space-y-3 pb-32">
+                <p id="placeholder" class="text-center text-slate-400 py-10 italic text-sm">ยังไม่มีข้อมูลบันทึก</p>
+            </div>
+        </main>
+
+        <div id="actionArea" class="hidden fixed bottom-6 left-0 right-0 px-6 max-w-[500px] mx-auto">
+            <button id="btnPdf" onclick="exportToPDF()" class="w-full bg-indigo-950 text-white py-4 rounded-2xl font-bold shadow-2xl active:scale-95 transition">
+                📄 ออกรายงาน PDF
+            </button>
+        </div>
+    </div>
+
+    <div id="pdf-render-area">
+        <div style="display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 5px solid #1e1b4b; padding-bottom: 15px;">
+            <div>
+                <h1 style="font-size: 26px; color: #1e1b4b; margin: 0; font-weight: bold;">INSPECTION REPORT</h1>
+                <p id="pdf_proj" style="margin: 8px 0 0 0; font-size: 16px;"></p>
+            </div>
+            <div style="text-align: right;">
+                <p id="pdf_date" style="margin: 0; font-weight: bold; font-size: 14px;"></p>
+                <p id="pdf_ins" style="margin: 5px 0 0 0; font-size: 14px;"></p>
+            </div>
+        </div>
+
+        <table class="pdf-table">
+            <thead>
+                <tr>
+                    <th style="width: 50px;">ลำดับ</th>
+                    <th>รายละเอียดความเสียหาย</th>
+                    <th style="width: 350px;">ภาพถ่ายหน้างาน</th>
+                </tr>
+            </thead>
+            <tbody id="pdfTableBody"></tbody>
+        </table>
+        
+        <div class="footer-sign">
+            <div class="sign-box">
+                <div class="line"></div>
+                <p>ผู้ตรวจสอบ</p>
+            </div>
+            <div class="sign-box">
+                <div class="line"></div>
+                <p>ผู้รับเหมา / พยาน</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let defectData = [];
+
+        document.getElementById('cameraInput').onchange = function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (f) => {
+                    document.getElementById('imgPreview').src = f.target.result;
+                    document.getElementById('previewContainer').classList.remove('hidden');
+                };
+                reader.readAsDataURL(file);
+            }
+        };
+
+        function clearImage() {
+            document.getElementById('cameraInput').value = '';
+            document.getElementById('previewContainer').classList.add('hidden');
+        }
+
+        function addListItem() {
+            const title = document.getElementById('defectTitle').value;
+            const img = document.getElementById('imgPreview').src;
+            if(!title || document.getElementById('previewContainer').classList.contains('hidden')) return alert("กรุณาระบุรายละเอียดและถ่ายรูป");
+
+            defectData.push({ title, img });
+            renderUI();
+            document.getElementById('defectTitle').value = '';
+            clearImage();
+        }
+
+        function renderUI() {
+            const list = document.getElementById('displayList');
+            const action = document.getElementById('actionArea');
+            const placeholder = document.getElementById('placeholder');
+            list.innerHTML = '';
+            if(defectData.length > 0) {
+                placeholder.classList.add('hidden');
+                action.classList.remove('hidden');
+                defectData.forEach((item, index) => {
+                    const card = document.createElement('div');
+                    card.className = "bg-white p-3 rounded-2xl flex items-center gap-4 border border-slate-200 shadow-sm";
+                    card.innerHTML = `<img src="${item.img}" class="w-16 h-16 object-cover rounded-xl shadow-inner border"><div class="flex-1 font-bold text-slate-700 text-sm">${index+1}. ${item.title}</div><button onclick="deleteItem(${index})" class="text-rose-400 px-3 py-2">✕</button>`;
+                    list.appendChild(card);
+                });
+            } else {
+                placeholder.classList.remove('hidden');
+                action.classList.add('hidden');
+            }
+        }
+
+        function deleteItem(i) {
+            defectData.splice(i, 1);
+            renderUI();
+        }
+
+        function resetApp() {
+            if(confirm("ล้างข้อมูลทั้งหมด?")) {
+                defectData = [];
+                document.getElementById('projName').value = '';
+                document.getElementById('inspectorName').value = '';
+                renderUI();
+            }
+        }
+
+        async function exportToPDF() {
+            if (typeof html2pdf === 'undefined') {
+                return alert("Library PDF ยังโหลดไม่เสร็จ กรุณารอ 2-3 วินาทีแล้วลองใหม่");
+            }
+
+            const btn = document.getElementById('btnPdf');
+            btn.innerText = "⏳ กำลังสร้างไฟล์...";
+            btn.disabled = true;
+
+            document.getElementById('pdf_proj').innerText = "โครงการ: " + (document.getElementById('projName').value || "-");
+            document.getElementById('pdf_ins').innerText = "ผู้ตรวจสอบ: " + (document.getElementById('inspectorName').value || "-");
+            document.getElementById('pdf_date').innerText = "วันที่ตรวจ: " + new Date().toLocaleDateString('th-TH');
+
+            const body = document.getElementById('pdfTableBody');
+            body.innerHTML = '';
+            defectData.forEach((item, index) => {
+                body.innerHTML += `<tr><td style="text-align: center;">${index+1}</td><td style="font-weight: bold;">${item.title}</td><td style="text-align: center;"><img src="${item.img}" class="pdf-img"></td></tr>`;
+            });
+
+            const element = document.getElementById('pdf-render-area');
+            element.style.display = 'block';
+
+            const opt = { 
+                margin: [10, 10], 
+                filename: 'Report.pdf', 
+                image: { type: 'jpeg', quality: 0.98 }, 
+                html2canvas: { scale: 2, useCORS: true }, 
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } 
+            };
+
+            try {
+                // เปลี่ยนไปใช้วิธีเปิดในหน้าใหม่ เพื่อป้องกัน iOS บล็อก
+                const worker = html2pdf().set(opt).from(element);
+                const pdfBlob = await worker.output('bloburl');
+                const link = document.createElement('a');
+                link.href = pdfBlob;
+                link.target = '_blank';
+                link.click();
+            } catch (err) {
+                console.error(err);
+                alert("เกิดข้อผิดพลาด: " + err.message);
+            } finally {
+                element.style.display = 'none';
+                btn.innerText = "📄 ออกรายงาน PDF";
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
