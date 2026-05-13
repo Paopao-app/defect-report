@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Defect Expert V5.2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap');
+        body { font-family: 'Sarabun', sans-serif; -webkit-tap-highlight-color: transparent; background-color: #f8fafc; }
+        
+        /* สไตล์สำหรับการพิมพ์ Report */
+        @media print {
+            body { background: white; }
+            .no-print { display: none !important; }
+            #pdf-content { display: block !important; }
+            @page { size: A4; margin: 10mm; }
+            
+            .page-break { page-break-after: always; }
+            .report-row { page-break-inside: avoid; break-inside: avoid; }
+            
+            /* จำกัด 4 รูปต่อหน้าด้วยการนับเลขลำดับ (CSS Counter หรือ Manual) */
+            .report-table td { vertical-align: middle !important; text-align: center !important; }
+        }
+
+        .pwa-app { max-width: 500px; margin: 0 auto; min-height: 100vh; background: white; position: relative; }
+        
+        /* Editor Canvas */
+        #editorWrapper { position: fixed; inset: 0; background: black; z-index: 100; display: none; flex-direction: column; }
+        #drawCanvas { background: transparent; touch-action: none; max-width: 100%; height: auto; }
+
+        /* Report Style */
+        .report-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; table-layout: fixed; }
+        .report-table th { background-color: #0f172a; color: white; padding: 12px; font-size: 14px; text-transform: uppercase; border: 1px solid #1e293b; }
+        .report-table td { border: 1px solid #e2e8f0; padding: 10px; vertical-align: middle; text-align: center; word-wrap: break-word; }
+        .defect-img { width: 100%; max-width: 280px; border-radius: 4px; object-fit: contain; }
+    </style>
+</head>
+<body>
+    <div class="pwa-app shadow-2xl no-print">
+        <header class="bg-[#0f172a] text-white p-6 rounded-b-[2rem] shadow-xl">
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-2xl font-bold">Defect Expert</h1>
+                <button onclick="resetApp()" class="p-2 bg-white/10 rounded-full text-white hover:bg-rose-500 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+            </div>
+            <div class="space-y-3">
+                <input type="text" id="projName" placeholder="Project Name" class="w-full bg-white/5 border border-white/20 rounded-xl p-3 text-sm text-white outline-none focus:border-indigo-400 transition-all">
+                <input type="text" id="inspectorName" placeholder="Inspector Name" class="w-full bg-white/5 border border-white/20 rounded-xl p-3 text-sm text-white outline-none focus:border-indigo-400 transition-all">
+            </div>
+        </header>
+
+        <main class="p-6 pb-32">
+            <div class="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm mb-8">
+                <input type="text" id="defectTitle" placeholder="รายละเอียดข้อบกพร่อง..." class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl mb-4 outline-none focus:ring-2 focus:ring-indigo-500/20">
+                
+                <div id="previewContainer" class="hidden mb-4 relative rounded-2xl overflow-hidden border">
+                    <img id="imgPreview" class="w-full h-auto object-cover">
+                    <div class="absolute bottom-2 right-2 flex gap-2">
+                        <button onclick="openEditor()" class="bg-indigo-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg">✏️ วาดเขียน/ชี้จุด</button>
+                        <button onclick="clearImage()" class="bg-white text-rose-600 px-4 py-2 rounded-full text-xs font-bold shadow-lg">✕ ลบ</button>
+                    </div>
+                </div>
+
+                <button onclick="document.getElementById('cameraInput').click()" class="w-full bg-slate-800 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition">
+                    📸 ถ่ายรูปภาพหน้างาน
+                </button>
+                <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden">
+                
+                <button id="btnAdd" onclick="addListItem()" class="w-full mt-3 bg-indigo-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-indigo-100 active:scale-95 transition">เพิ่มลงรายการ</button>
+            </div>
+
+            <div id="displayList" class="space-y-4"></div>
+        </main>
+
+        <div id="actionArea" class="hidden fixed bottom-8 left-0 right-0 px-6 max-w-[500px] mx-auto z-50">
+            <button onclick="exportToPDF()" class="w-full bg-emerald-600 text-white py-5 rounded-3xl font-bold shadow-2xl flex justify-center items-center gap-3">
+                📄 ออกรายงาน PDF (จำกัด 4 รูป/หน้า)
+            </button>
+        </div>
+    </div>
+
+    <div id="editorWrapper">
+        <div class="p-4 flex justify-between items-center text-white bg-slate-900">
+            <button onclick="closeEditor()" class="text-sm">ยกเลิก</button>
+            <div class="flex gap-4">
+                <button onclick="setTool('circle')" class="tool-btn bg-white/10 p-2 rounded">⭕ วงกลม</button>
+                <button onclick="setTool('arrow')" class="tool-btn bg-white/10 p-2 rounded">↗️ ลูกศร</button>
+                <button onclick="setTool('pen')" class="tool-btn bg-white/10 p-2 rounded">✏️ ปากกา</button>
+            </div>
+            <button onclick="saveEdit()" class="text-indigo-400 font-bold">บันทึกรูป</button>
+        </div>
+        <div class="flex-1 flex items-center justify-center overflow-hidden">
+            <canvas id="drawCanvas"></canvas>
+        </div>
+    </div>
+
+    <div id="pdf-content" class="hidden p-8">
+        </div>
+
+    <script>
+        let defectData = [];
+        let tool = 'pen';
+        const canvas = document.getElementById('drawCanvas');
+        const ctx = canvas.getContext('2d');
+        let isDrawing = false;
+        let startX, startY;
+        let originalImgData = null;
+
+        // --- ระบบ Camera & Image Management ---
+        document.getElementById('cameraInput').onchange = function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (f) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        // บีบอัดรูปเบื้องต้น
+                        const tempCanvas = document.createElement('canvas');
+                        const scale = 800 / img.width;
+                        tempCanvas.width = 800;
+                        tempCanvas.height = img.height * scale;
+                        tempCanvas.getContext('2d').drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
+                        document.getElementById('imgPreview').src = tempCanvas.toDataURL('image/jpeg', 0.8);
+                        document.getElementById('previewContainer').classList.remove('hidden');
+                    };
+                    img.src = f.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        };
+
+        function clearImage() {
+            document.getElementById('cameraInput').value = '';
+            document.getElementById('previewContainer').classList.add('hidden');
+        }
+
+        // --- ระบบ Drawing Editor ---
+        function openEditor() {
+            const img = document.getElementById('imgPreview');
+            if(!img.src) return;
+            document.getElementById('editorWrapper').style.display = 'flex';
+            
+            const image = new Image();
+            image.onload = () => {
+                canvas.width = image.width;
+                canvas.height = image.height;
+                ctx.drawImage(image, 0, 0);
+                originalImgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            };
+            image.src = img.src;
+        }
+
+        function setTool(t) { tool = t; }
+
+        canvas.addEventListener('touchstart', startDraw);
+        canvas.addEventListener('touchmove', drawing);
+        canvas.addEventListener('touchend', stopDraw);
+
+        function startDraw(e) {
+            isDrawing = true;
+            const rect = canvas.getBoundingClientRect();
+            const touch = e.touches[0];
+            startX = (touch.clientX - rect.left) * (canvas.width / rect.width);
+            startY = (touch.clientY - rect.top) * (canvas.height / rect.height);
+            if(tool !== 'pen') originalImgData = ctx.getImageData(0,0, canvas.width, canvas.height);
+        }
+
+        function drawing(e) {
+            if(!isDrawing) return;
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const touch = e.touches[0];
+            const currX = (touch.clientX - rect.left) * (canvas.width / rect.width);
+            const currY = (touch.clientY - rect.top) * (canvas.height / rect.height);
+
+            ctx.strokeStyle = "red";
+            ctx.lineWidth = 5;
+            ctx.lineCap = "round";
+
+            if(tool === 'pen') {
+                ctx.lineTo(currX, currY);
+                ctx.stroke();
+            } else {
+                ctx.putImageData(originalImgData, 0, 0);
+                if(tool === 'circle') {
+                    ctx.beginPath();
+                    let r = Math.sqrt(Math.pow(currX - startX, 2) + Math.pow(currY - startY, 2));
+                    ctx.arc(startX, startY, r, 0, Math.PI * 2);
+                    ctx.stroke();
+                } else if(tool === 'arrow') {
+                    drawArrow(startX, startY, currX, currY);
+                }
+            }
+        }
+
+        function drawArrow(x1, y1, x2, y2) {
+            const headlen = 20;
+            const angle = Math.atan2(y2 - y1, x2 - x1);
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.lineTo(x2 - headlen * Math.cos(angle - Math.PI / 6), y2 - headlen * Math.sin(angle - Math.PI / 6));
+            ctx.moveTo(x2, y2);
+            ctx.lineTo(x2 - headlen * Math.cos(angle + Math.PI / 6), y2 - headlen * Math.sin(angle + Math.PI / 6));
+            ctx.stroke();
+        }
+
+        function stopDraw() { isDrawing = false; ctx.beginPath(); }
+        function closeEditor() { document.getElementById('editorWrapper').style.display = 'none'; }
+        function saveEdit() {
+            document.getElementById('imgPreview').src = canvas.toDataURL('image/jpeg', 0.8);
+            closeEditor();
+        }
+
+        // --- ระบบเพิ่มข้อมูลและ UI ---
+        function addListItem() {
+            const title = document.getElementById('defectTitle').value;
+            const img = document.getElementById('imgPreview').src;
+            if(!title || !img) return alert("กรุณากรอกข้อมูลและเตรียมรูปภาพ");
+            defectData.push({ title, img });
+            renderUI();
+            document.getElementById('defectTitle').value = '';
+            clearImage();
+        }
+
+        function renderUI() {
+            const list = document.getElementById('displayList');
+            list.innerHTML = '';
+            defectData.forEach((item, index) => {
+                const div = document.createElement('div');
+                div.className = "bg-white p-4 rounded-2xl flex items-center gap-4 border shadow-sm";
+                div.innerHTML = `<img src="${item.img}" class="w-16 h-16 object-cover rounded-lg">
+                                 <div class="flex-1 font-bold text-slate-700">${index+1}. ${item.title}</div>
+                                 <button onclick="deleteItem(${index})" class="text-rose-400 px-2 font-bold">✕</button>`;
+                list.appendChild(div);
+            });
+            document.getElementById('actionArea').classList.toggle('hidden', defectData.length === 0);
+        }
+
+        function deleteItem(i) { defectData.splice(i,1); renderUI(); }
+        function resetApp() { if(confirm("ล้างข้อมูลทั้งหมด?")) { defectData = []; renderUI(); } }
+
+        // --- ระบบออกรายงาน PDF แบบ Professional (4 รายการต่อหน้า) ---
+        function exportToPDF() {
+            const container = document.getElementById('pdf-content');
+            container.innerHTML = '';
+            
+            const totalPages = Math.ceil(defectData.length / 4);
+
+            for(let p = 0; p < totalPages; p++) {
+                const pageDiv = document.createElement('div');
+                pageDiv.className = "page-break";
+                
+                // Header ของแต่ละหน้า
+                pageDiv.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; border-bottom:4px solid #0f172a; padding-bottom:15px; margin-bottom:20px;">
+                        <div>
+                            <h2 style="margin:0; font-size:28px; color:#0f172a;">DEFECT REPORT</h2>
+                            <p style="margin:5px 0; color:#64748b;">PROJECT: ${document.getElementById('projName').value || '-'}</p>
+                        </div>
+                        <div style="text-align:right;">
+                            <p style="margin:0; font-weight:700;">วันที่: ${new Date().toLocaleDateString('th-TH')}</p>
+                            <p style="margin:5px 0;">หน้า ${p+1} / ${totalPages}</p>
+                        </div>
+                    </div>
+                    <table class="report-table">
+                        <thead>
+                            <tr>
+                                <th style="width:10%">#</th>
+                                <th style="width:40%">รายละเอียดที่พบ</th>
+                                <th style="width:50%">ภาพถ่ายหลักฐาน</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${defectData.slice(p * 4, (p * 4) + 4).map((item, i) => `
+                                <tr>
+                                    <td>${(p * 4) + i + 1}</td>
+                                    <td style="font-weight:700; text-align:center;">${item.title}</td>
+                                    <td><img src="${item.img}" class="defect-img"></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+
+                // Footer (แสดงเฉพาะหน้าสุดท้าย)
+                if(p === totalPages - 1) {
+                    pageDiv.innerHTML += `
+                        <div style="margin-top:50px; display:flex; justify-content:space-around;">
+                            <div style="text-align:center; width:200px; border-top:1px solid #000; padding-top:5px;">( ผู้ตรวจสอบ )</div>
+                            <div style="text-align:center; width:200px; border-top:1px solid #000; padding-top:5px;">( ผู้รับทราบ )</div>
+                        </div>
+                    `;
+                }
+                container.appendChild(pageDiv);
+            }
+            window.print();
+        }
+    </script>
+</body>
+</html>
