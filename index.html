@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Inspection Pro V5.1</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap');
+        body { font-family: 'Sarabun', sans-serif; -webkit-tap-highlight-color: transparent; background-color: #f1f5f9; }
+        
+        @media print {
+            body * { visibility: hidden; }
+            #pdf-content, #pdf-content * { visibility: visible; }
+            #pdf-content { position: absolute; left: 0; top: 0; width: 100%; display: block !important; }
+            @page { size: A4; margin: 15mm; }
+            .no-print { display: none !important; }
+        }
+
+        .pwa-app { max-width: 500px; margin: 0 auto; min-height: 100vh; background: white; position: relative; }
+        .report-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .report-table th, .report-table td { border: 1px solid #e2e8f0; padding: 12px; font-size: 14px; }
+        .report-table th { background-color: #1e1b4b; color: white; }
+    </style>
+</head>
+<body>
+    <div class="pwa-app shadow-2xl no-print">
+        <header class="bg-indigo-950 text-white p-6 rounded-b-[2.5rem] shadow-lg">
+            <div class="flex justify-between items-center mb-6">
+                <div>
+                    <h1 class="text-2xl font-bold tracking-tight">Inspection Pro</h1>
+                    <p class="text-indigo-300 text-xs font-light">V5.1 - Optimized Storage</p>
+                </div>
+                <button onclick="resetApp()" class="p-2.5 bg-indigo-900/50 rounded-full text-indigo-300 hover:bg-rose-500 hover:text-white transition-all">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+            </div>
+            <div class="space-y-4">
+                <input type="text" id="projName" placeholder="ชื่อโครงการ" class="w-full bg-white/10 border border-white/20 rounded-2xl p-4 text-white outline-none">
+                <input type="text" id="inspectorName" placeholder="ชื่อผู้ตรวจสอบ" class="w-full bg-white/10 border border-white/20 rounded-2xl p-4 text-white outline-none">
+            </div>
+        </header>
+
+        <main class="p-6 pb-32">
+            <div class="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm mb-8">
+                <input type="text" id="defectTitle" placeholder="รายละเอียดความเสียหาย..." class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl mb-4 outline-none">
+                
+                <div id="previewContainer" class="hidden mb-4 relative">
+                    <img id="imgPreview" class="w-full h-56 object-cover rounded-2xl shadow-md border border-slate-200">
+                    <button onclick="clearImage()" class="absolute top-3 right-3 bg-white/90 text-rose-600 w-10 h-10 rounded-full shadow-lg flex items-center justify-center font-bold">✕</button>
+                </div>
+
+                <div class="flex gap-3">
+                    <button onclick="document.getElementById('cameraInput').click()" class="flex-1 bg-slate-100 text-slate-700 font-bold py-4 rounded-2xl border border-slate-200 flex items-center justify-center gap-2">
+                        📸 ถ่ายรูป
+                    </button>
+                    <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden">
+                    <button id="btnAdd" onclick="addListItem()" class="flex-[1.5] bg-indigo-600 text-white font-bold py-4 rounded-2xl shadow-lg active:scale-95 transition">เพิ่มรายการ</button>
+                </div>
+            </div>
+
+            <h2 class="font-bold text-slate-800 mb-4 px-2">รายการทั้งหมด (<span id="itemCount">0</span>)</h2>
+            <div id="displayList" class="space-y-4"></div>
+        </main>
+
+        <div id="actionArea" class="hidden fixed bottom-8 left-0 right-0 px-6 max-w-[500px] mx-auto z-50">
+            <button onclick="exportToPDF()" class="w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-bold shadow-2xl flex justify-center items-center gap-3">
+                📄 ออกรายงาน PDF
+            </button>
+        </div>
+    </div>
+
+    <div id="pdf-content" class="hidden">
+        <div style="border-bottom: 5px solid #1e1b4b; padding-bottom: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: flex-end;">
+            <div>
+                <h1 style="font-size: 36px; color: #1e1b4b; margin: 0; font-weight: 800;">INSPECTION REPORT</h1>
+                <p style="font-size: 18px; color: #64748b; margin: 5px 0 0 0;" id="out_projName"></p>
+            </div>
+            <div style="text-align: right; color: #1e1b4b;">
+                <p style="font-weight: 700; margin: 0;">วันที่ตรวจ: <span id="out_date" style="font-weight: 400;"></span></p>
+                <p style="font-weight: 700; margin: 5px 0 0 0;">ผู้ตรวจสอบ: <span id="out_inspector" style="font-weight: 400;"></span></p>
+            </div>
+        </div>
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th style="width: 50px;">ลำดับ</th>
+                    <th style="text-align: left;">รายละเอียดความเสียหาย</th>
+                    <th style="width: 350px;">ภาพถ่ายหลักฐาน</th>
+                </tr>
+            </thead>
+            <tbody id="out_tableBody"></tbody>
+        </table>
+    </div>
+
+    <script>
+        let defectData = [];
+        let currentCompressedImg = "";
+
+        // ฟังก์ชันย่อรูปภาพ (Image Compression)
+        async function compressImage(base64Str) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.src = base64Str;
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const MAX_WIDTH = 800; // ลดความกว้างรูปเหลือ 800px (เพียงพอสำหรับ PDF)
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > MAX_WIDTH) {
+                        height *= MAX_WIDTH / width;
+                        width = MAX_WIDTH;
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    // บีบอัดคุณภาพเหลือ 0.7 (70%) เพื่อลดขนาดไฟล์ลงมหาศาล
+                    resolve(canvas.toDataURL('image/jpeg', 0.7));
+                };
+            });
+        }
+
+        document.getElementById('cameraInput').onchange = async function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const btnAdd = document.getElementById('btnAdd');
+                btnAdd.innerText = "⏳ กำลังประมวลผลรูป...";
+                btnAdd.disabled = true;
+
+                const reader = new FileReader();
+                reader.onload = async (f) => {
+                    // ย่อรูปทันทีที่เลือก
+                    currentCompressedImg = await compressImage(f.target.result);
+                    document.getElementById('imgPreview').src = currentCompressedImg;
+                    document.getElementById('previewContainer').classList.remove('hidden');
+                    
+                    btnAdd.innerText = "เพิ่มรายการ";
+                    btnAdd.disabled = false;
+                };
+                reader.readAsDataURL(file);
+            }
+        };
+
+        function clearImage() {
+            document.getElementById('cameraInput').value = '';
+            document.getElementById('previewContainer').classList.add('hidden');
+            currentCompressedImg = "";
+        }
+
+        function addListItem() {
+            const title = document.getElementById('defectTitle').value;
+            if(!title || !currentCompressedImg) return alert("กรุณาระบุรายละเอียดและถ่ายรูป");
+
+            defectData.push({ title, img: currentCompressedImg });
+            renderUI();
+            
+            document.getElementById('defectTitle').value = '';
+            clearImage();
+        }
+
+        function renderUI() {
+            const list = document.getElementById('displayList');
+            const count = document.getElementById('itemCount');
+            const action = document.getElementById('actionArea');
+
+            list.innerHTML = '';
+            defectData.forEach((item, index) => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = "bg-white p-4 rounded-2xl flex items-center gap-4 border border-slate-100 shadow-sm border-l-4 border-l-indigo-600";
+                itemDiv.innerHTML = `
+                    <img src="${item.img}" class="w-16 h-16 object-cover rounded-xl border">
+                    <div class="flex-1">
+                        <p class="text-[10px] text-slate-400 font-bold">รายการที่ ${index + 1}</p>
+                        <p class="font-bold text-slate-700">${item.title}</p>
+                    </div>
+                    <button onclick="deleteItem(${index})" class="text-rose-500 p-2">✕</button>
+                `;
+                list.appendChild(itemDiv);
+            });
+
+            count.innerText = defectData.length;
+            action.classList.toggle('hidden', defectData.length === 0);
+        }
+
+        function deleteItem(i) {
+            defectData.splice(i, 1);
+            renderUI();
+        }
+
+        // แก้ไข Reset App ให้ล้างค่าทุกอย่าง
+        function resetApp() {
+            if(confirm("ล้างข้อมูลทั้งหมดเพื่อเริ่มงานใหม่?")) {
+                defectData = [];
+                document.getElementById('projName').value = '';
+                document.getElementById('inspectorName').value = '';
+                document.getElementById('defectTitle').value = '';
+                clearImage();
+                renderUI();
+            }
+        }
+
+        function exportToPDF() {
+            document.getElementById('out_projName').innerText = "โครงการ: " + (document.getElementById('projName').value || "-");
+            document.getElementById('out_inspector').innerText = document.getElementById('inspectorName').value || "-";
+            document.getElementById('out_date').innerText = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+
+            const tableBody = document.getElementById('out_tableBody');
+            tableBody.innerHTML = '';
+            
+            defectData.forEach((item, index) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td style="text-align: center; vertical-align: top;">${index + 1}</td>
+                    <td style="vertical-align: top; font-weight: bold;">${item.title}</td>
+                    <td style="text-align: center;"><img src="${item.img}" style="width: 320px;"></td>
+                `;
+                tableBody.appendChild(tr);
+            });
+
+            window.print();
+        }
+    </script>
+</body>
+</html>
