@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Inspection Pro V5 FIX</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+<style>
+body{
+    font-family:sans-serif;
+    background:#f1f5f9;
+}
+
+#pdf-render-area{
+    width:800px;
+    background:white;
+    padding:40px;
+
+    position:fixed;
+    top:0;
+    left:0;
+
+    z-index:-1;
+
+    opacity:0.01;
+
+    pointer-events:none;
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+}
+
+td,th{
+    border:1px solid #ccc;
+    padding:10px;
+}
+
+tr{
+    page-break-inside:avoid;
+}
+
+img{
+    max-width:100%;
+    page-break-inside:avoid;
+}
+</style>
+</head>
+
+<body>
+
+<div style="max-width:500px;margin:auto;background:white;padding:20px;">
+
+<h1 style="font-size:28px;font-weight:bold;">
+Inspection Pro
+</h1>
+
+<input id="title"
+placeholder="รายละเอียด"
+style="width:100%;padding:12px;margin-top:20px;border:1px solid #ccc;">
+
+<input
+type="file"
+id="cameraInput"
+accept="image/*"
+capture
+style="margin-top:20px;">
+
+<img
+id="preview"
+style="width:100%;margin-top:20px;display:none;border-radius:12px;">
+
+<button
+onclick="addItem()"
+style="width:100%;padding:16px;background:#4338ca;color:white;border:none;margin-top:20px;border-radius:12px;">
+
+เพิ่มรายการ
+
+</button>
+
+<div id="list"></div>
+
+<button
+onclick="exportPDF()"
+style="width:100%;padding:18px;background:#059669;color:white;border:none;margin-top:30px;border-radius:12px;">
+
+Export PDF
+
+</button>
+
+</div>
+
+<div id="pdf-render-area">
+
+<h1 style="font-size:30px;margin-bottom:20px;">
+INSPECTION REPORT
+</h1>
+
+<table>
+
+<thead>
+
+<tr>
+
+<th width="50">#</th>
+<th>รายละเอียด</th>
+<th width="300">รูปภาพ</th>
+
+</tr>
+
+</thead>
+
+<tbody id="pdf-body"></tbody>
+
+</table>
+
+</div>
+
+<script>
+
+let data = [];
+let currentImage = '';
+
+function compressImage(file){
+
+    return new Promise((resolve)=>{
+
+        const reader = new FileReader();
+
+        reader.onload = function(e){
+
+            const img = new Image();
+
+            img.onload = function(){
+
+                const canvas =
+                document.createElement('canvas');
+
+                let width = img.width;
+                let height = img.height;
+
+                const maxWidth = 1000;
+
+                if(width > maxWidth){
+
+                    height *= maxWidth / width;
+                    width = maxWidth;
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+
+                const ctx =
+                canvas.getContext('2d');
+
+                ctx.drawImage(img,0,0,width,height);
+
+                resolve(
+                    canvas.toDataURL(
+                        'image/jpeg',
+                        0.7
+                    )
+                );
+            };
+
+            img.src = e.target.result;
+        };
+
+        reader.readAsDataURL(file);
+    });
+}
+
+document.getElementById('cameraInput')
+.onchange = async function(e){
+
+    const file = e.target.files[0];
+
+    if(!file) return;
+
+    currentImage =
+    await compressImage(file);
+
+    const preview =
+    document.getElementById('preview');
+
+    preview.src = currentImage;
+
+    preview.style.display = 'block';
+};
+
+function addItem(){
+
+    const title =
+    document.getElementById('title')
+    .value;
+
+    if(!title || !currentImage){
+
+        alert('กรอกข้อมูลให้ครบ');
+
+        return;
+    }
+
+    data.push({
+        title,
+        img:currentImage
+    });
+
+    renderList();
+
+    document.getElementById('title').value='';
+
+    document.getElementById('preview').style.display='none';
+
+    currentImage='';
+}
+
+function renderList(){
+
+    const list =
+    document.getElementById('list');
+
+    list.innerHTML='';
+
+    data.forEach((item,index)=>{
+
+        const div =
+        document.createElement('div');
+
+        div.style.marginTop='20px';
+
+        div.innerHTML = `
+        <div style="display:flex;gap:10px;align-items:center;">
+            <img src="${item.img}" width="80" style="border-radius:10px;">
+            <div>${index+1}. ${item.title}</div>
+        </div>
+        `;
+
+        list.appendChild(div);
+    });
+}
+
+async function exportPDF(){
+
+    if(data.length===0){
+
+        alert('ไม่มีข้อมูล');
+
+        return;
+    }
+
+    const body =
+    document.getElementById('pdf-body');
+
+    body.innerHTML='';
+
+    for(let i=0;i<data.length;i++){
+
+        const item = data[i];
+
+        const tr =
+        document.createElement('tr');
+
+        tr.innerHTML = `
+        <td>${i+1}</td>
+        <td>${item.title}</td>
+        <td>
+            <img src="${item.img}" width="260">
+        </td>
+        `;
+
+        body.appendChild(tr);
+    }
+
+    const element =
+    document.getElementById('pdf-render-area');
+
+    await new Promise(r=>setTimeout(r,1000));
+
+    const opt = {
+
+        margin:[10,10,10,10],
+
+        filename:'inspection-report.pdf',
+
+        image:{
+            type:'jpeg',
+            quality:1
+        },
+
+        html2canvas:{
+
+            scale:1,
+
+            useCORS:true,
+
+            allowTaint:true,
+
+            backgroundColor:'#ffffff'
+        },
+
+        jsPDF:{
+
+            unit:'mm',
+
+            format:'a4',
+
+            orientation:'portrait'
+        },
+
+        pagebreak:{
+            mode:['avoid-all','css','legacy']
+        }
+    };
+
+    try{
+
+        await html2pdf()
+        .set(opt)
+        .from(element)
+        .save();
+
+    }catch(err){
+
+        console.error(err);
+
+        alert('PDF ERROR');
+    }
+}
+
+</script>
+
+</body>
+</html>
