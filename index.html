@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Inspection Pro V5.6</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap');
+        body { font-family: 'Sarabun', sans-serif; background-color: #f1f5f9; }
+
+        @media print {
+            body { background: white; margin: 0; padding: 0; }
+            .no-print { display: none !important; }
+            #pdf-content { display: block !important; }
+            @page { size: A4; margin: 0; } /* ปรับเป็น 0 เพื่อคุม Margin ผ่าน CSS เอง */
+            
+            .print-page {
+                width: 210mm;
+                height: 297mm;
+                padding: 15mm;
+                box-sizing: border-box;
+                display: flex;
+                flex-direction: column;
+                position: relative;
+                /* ลบ page-break-after ตรงนี้ออกเพื่อไปคุมผ่าน JS แทน */
+            }
+
+            .grid-layout {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 12pt;
+                margin-top: 15px;
+            }
+
+            .defect-card {
+                border: 1pt solid #0f172a;
+                display: flex;
+                flex-direction: column;
+                background: #fff;
+            }
+
+            .card-header {
+                background-color: #0f172a !important;
+                color: white !important;
+                -webkit-print-color-adjust: exact;
+                padding: 6pt;
+                text-align: center;
+                font-weight: bold;
+                font-size: 11pt;
+            }
+
+            .img-container {
+                height: 80mm; 
+                width: 100%;
+                background: #f1f5f9;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .defect-img {
+                max-width: 100%;
+                max-height: 100%;
+                object-fit: contain; /* แก้ปัญหาภาพแนวนอนโดนตัดขอบ */
+            }
+
+            .card-body {
+                padding: 8pt;
+                text-align: center;
+                font-size: 11pt;
+                border-top: 1pt solid #0f172a;
+                min-height: 35pt;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .sig-area {
+                margin-top: auto; /* ดันลายเซ็นลงล่างสุดของหน้าสุดท้าย */
+                display: flex;
+                justify-content: space-around;
+                padding: 20pt 0;
+                border-top: 1pt solid #cbd5e1;
+            }
+        }
+
+        .pwa-app { max-width: 500px; margin: 0 auto; min-height: 100vh; background: white; }
+    </style>
+</head>
+<body>
+    <div class="pwa-app shadow-2xl no-print">
+        <header class="bg-[#0f172a] text-white p-6 rounded-b-[2rem] shadow-xl">
+            <h1 class="text-2xl font-bold mb-4">Inspection Pro V5.6</h1>
+            <div class="space-y-3">
+                <input type="text" id="projName" placeholder="ชื่อโครงการ" class="w-full bg-white/10 border border-white/20 rounded-xl p-3 text-white outline-none">
+                <input type="text" id="inspectorName" placeholder="ชื่อผู้ตรวจสอบ" class="w-full bg-white/10 border border-white/20 rounded-xl p-3 text-white outline-none">
+            </div>
+        </header>
+        <main class="p-6 pb-32">
+            <div class="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm mb-6">
+                <textarea id="defectTitle" placeholder="รายละเอียด..." class="w-full p-4 bg-slate-50 border rounded-2xl mb-4 outline-none resize-none"></textarea>
+                <div id="previewContainer" class="hidden mb-4 relative rounded-xl overflow-hidden border"><img id="imgPreview" class="w-full h-auto"></div>
+                <button onclick="document.getElementById('cameraInput').click()" class="w-full bg-slate-800 text-white font-bold py-4 rounded-2xl mb-3">📸 ถ่ายรูป</button>
+                <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden">
+                <button onclick="addListItem()" class="w-full bg-indigo-600 text-white font-bold py-4 rounded-2xl">เพิ่มรายการ</button>
+            </div>
+            <div id="displayList" class="space-y-4"></div>
+        </main>
+        <div id="actionArea" class="hidden fixed bottom-8 left-0 right-0 px-6 max-w-[500px] mx-auto z-50">
+            <button onclick="exportToPDF()" class="w-full bg-emerald-600 text-white py-5 rounded-3xl font-bold shadow-2xl">📄 ออกรายงาน PDF</button>
+        </div>
+    </div>
+
+    <div id="pdf-content" class="hidden"></div>
+
+    <script>
+        let defectData = [];
+
+        document.getElementById('cameraInput').onchange = function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (f) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const scale = 1200 / img.width;
+                        canvas.width = 1200;
+                        canvas.height = img.height * scale;
+                        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+                        document.getElementById('imgPreview').src = canvas.toDataURL('image/jpeg', 0.85);
+                        document.getElementById('previewContainer').classList.remove('hidden');
+                    };
+                    img.src = f.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        };
+
+        function addListItem() {
+            const title = document.getElementById('defectTitle').value;
+            const img = document.getElementById('imgPreview').src;
+            if(!title || !img) return alert("กรุณากรอกข้อมูล");
+            defectData.push({ title, img });
+            renderUI();
+            document.getElementById('defectTitle').value = '';
+            document.getElementById('previewContainer').classList.add('hidden');
+        }
+
+        function renderUI() {
+            const list = document.getElementById('displayList');
+            list.innerHTML = '';
+            defectData.forEach((item, index) => {
+                const div = document.createElement('div');
+                div.className = "bg-white p-4 rounded-2xl flex items-center gap-4 border shadow-sm";
+                div.innerHTML = `<img src="${item.img}" class="w-16 h-16 object-cover rounded-lg border"><div class="flex-1 font-bold">${index+1}. ${item.title}</div><button onclick="deleteItem(${index})" class="text-rose-500">✕</button>`;
+                list.appendChild(div);
+            });
+            document.getElementById('actionArea').classList.toggle('hidden', defectData.length === 0);
+        }
+
+        function deleteItem(i) { defectData.splice(i,1); renderUI(); }
+
+        function exportToPDF() {
+            const container = document.getElementById('pdf-content');
+            container.innerHTML = '';
+            const totalPages = Math.ceil(defectData.length / 4);
+
+            for(let p = 0; p < totalPages; p++) {
+                const pageDiv = document.createElement('div');
+                pageDiv.className = "print-page";
+                
+                // คุมการตัดหน้าด้วย JS: ถ้าไม่ใช่หน้าสุดท้าย ให้เพิ่ม page-break
+                if (p < totalPages - 1) {
+                    pageDiv.style.pageBreakAfter = "always";
+                }
+
+                pageDiv.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; border-bottom:3pt solid #0f172a; padding-bottom:8pt; margin-bottom:12pt;">
+                        <div>
+                            <h1 style="margin:0; font-size:22pt; color:#0f172a; font-weight:800;">INSPECTION REPORT</h1>
+                            <p style="margin:2pt 0; font-size:12pt;">โครงการ: <b>${document.getElementById('projName').value || '-'}</b></p>
+                        </div>
+                        <div style="text-align:right; font-size:10pt;">
+                            <p style="margin:0;">ผู้ตรวจสอบ: <b>${document.getElementById('inspectorName').value || '-'}</b></p>
+                            <p style="margin:0; color:#64748b;">หน้า ${p+1} / ${totalPages}</p>
+                        </div>
+                    </div>
+                    <div class="grid-layout">
+                        ${defectData.slice(p * 4, p * 4 + 4).map((item, i) => `
+                            <div class="defect-card">
+                                <div class="card-header">รายการที่ ${(p*4)+i+1}</div>
+                                <div class="img-container"><img src="${item.img}" class="defect-img"></div>
+                                <div class="card-body"><b>${item.title}</b></div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    ${p === totalPages - 1 ? `
+                        <div class="sig-area">
+                            <div style="text-align:center; font-size:11pt;">______________________<br>ลงชื่อผู้ตรวจสอบ</div>
+                            <div style="text-align:center; font-size:11pt;">______________________<br>ลงชื่อผู้รับงาน</div>
+                        </div>
+                    ` : ''}
+                `;
+                container.appendChild(pageDiv);
+            }
+            window.print();
+        }
+    </script>
+</body>
+</html>
